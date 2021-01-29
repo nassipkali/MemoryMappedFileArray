@@ -32,6 +32,7 @@ class MemoryMappedFileArray {
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+
 template <typename T>
 MemoryMappedFileArray<T>::MemoryMappedFileArray(const char* filename, size_t block_size) {
     this->file = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
