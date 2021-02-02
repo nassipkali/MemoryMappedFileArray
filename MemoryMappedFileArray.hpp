@@ -1,3 +1,6 @@
+#ifndef MEMORYMAPPEDFILEARRAY_HPP
+#define MEMORYMAPPEDFILEARRAY_HPP
+#include <stddef.h>
 #if defined (unix)
 typedef int fd_t;
 #endif
@@ -16,14 +19,15 @@ class MemoryMappedFileArray {
 	fd_t file;
 	size_t block_size;
 	T* mapped_array;
-	size_t size;
+	size_t size = 0;
 	size_t cap;
-	MemoryMappedFileArray(const char* filename, size_t block_size);
+	MemoryMappedFileArray(const char* filename, size_t block_size = 4096);
 	~MemoryMappedFileArray();
-	bool Realloc(size_t size);
+	bool Realloc(size_t offset);
+	bool Resize(size_t size);
 	bool Add(T element);
 	T& operator[] (size_t index);
-}
+};
 
 
 // UNIX
@@ -42,7 +46,7 @@ MemoryMappedFileArray<T>::MemoryMappedFileArray(const char* filename, size_t blo
     this->size = st.st_size / sizeof(T);
     this->cap = ((this->size * sizeof(T) / this->block_size) + 1) * this->block_size;
     ftruncate(this->file, this->cap);
-    this->mapped_array = (T*)mmap(nullptr, this->cap, PROT_READ | PROT_WRITE, MAP_PRIVATE, this->file, 0);
+    this->mapped_array = (T*)mmap(NULL, this->cap, PROT_READ | PROT_WRITE, MAP_SHARED, this->file, 0);
 }
 
 template <typename T>
@@ -54,10 +58,11 @@ MemoryMappedFileArray<T>::~MemoryMappedFileArray() {
 
 template <typename T>
 bool MemoryMappedFileArray<T>::Realloc(size_t cap) {
+    msync(this->mapped_array, this->cap, MS_SYNC);
     munmap(this->mapped_array, this->cap);
     this->cap = cap;
     ftruncate(this->file, this->cap);
-    this->mapped_array = mmap(nullptr, this->cap, PROT_READ | PROT_WRITE, MAP_PRIVATE, this->file, 0);
+    this->mapped_array = (T*)mmap(NULL, this->cap, PROT_READ | PROT_WRITE, MAP_SHARED, this->file, 0);
     if(mapped_array) {
         return true;
     }
@@ -101,9 +106,10 @@ bool MemoryMappedFileArray<T>::Realloc(size_t cap) {
 
 template <typename T>
 bool MemoryMappedFileArray<T>::Add(T element) {
-    if((size + 1) * sizeof(T) == cap) {
+    if((size + 1) * sizeof(T) >= cap) {
 	if(this->Realloc(this->cap + this->block_size)) {
 	    this->mapped_array[size] = element;
+	    this->size++;
 	    return true;
 	}
 	else {
@@ -111,6 +117,18 @@ bool MemoryMappedFileArray<T>::Add(T element) {
 	}
     }
     this->mapped_array[size] = element;
+    this->size++;
+    return true;
+}
+
+template <typename T>
+bool MemoryMappedFileArray<T>::Resize(size_t size) {
+    if(size > this->cap) {
+	if(!this->Realloc(((size * sizeof(T)) + 1) * this->block_size)) {
+	    return false;
+	}
+    }
+    this->size = size;
     return true;
 }
 
@@ -119,6 +137,4 @@ T& MemoryMappedFileArray<T>::operator[] (size_t index) {
     return mapped_array[index];
 }
 
-
-
-
+#endif // MEMORYMAPPEDFILEARRAY_HPP
