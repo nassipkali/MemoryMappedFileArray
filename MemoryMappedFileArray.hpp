@@ -1,6 +1,7 @@
 #ifndef MEMORYMAPPEDFILEARRAY_HPP
 #define MEMORYMAPPEDFILEARRAY_HPP
 #include <stddef.h>
+#include <stdexcept>
 #if defined (unix)
 typedef int fd_t;
 #endif
@@ -23,9 +24,9 @@ class MemoryMappedFileArray {
 	size_t cap;
 	MemoryMappedFileArray(const char* filename, size_t block_size = 4096);
 	~MemoryMappedFileArray();
-	bool Realloc(size_t offset);
-	bool Resize(size_t size);
-	bool Add(T element);
+	void Realloc(size_t offset);
+	void Resize(size_t size);
+	void Add(T element);
 	T& operator[] (size_t index);
 };
 
@@ -47,6 +48,9 @@ MemoryMappedFileArray<T>::MemoryMappedFileArray(const char* filename, size_t blo
     this->cap = ((this->size * sizeof(T) / this->block_size) + 1) * this->block_size;
     ftruncate(this->file, this->cap);
     this->mapped_array = (T*)mmap(NULL, this->cap, PROT_READ | PROT_WRITE, MAP_SHARED, this->file, 0);
+    if(!this->mapped_array) {
+	throw std::runtime_error("MemoryMappedFileArray::MemoryMappedFileArray(const char* filename, size_t block_size) Error: mapped_array is NULL");
+    }
 }
 
 template <typename T>
@@ -57,17 +61,14 @@ MemoryMappedFileArray<T>::~MemoryMappedFileArray() {
 }
 
 template <typename T>
-bool MemoryMappedFileArray<T>::Realloc(size_t cap) {
+void MemoryMappedFileArray<T>::Realloc(size_t cap) {
     msync(this->mapped_array, this->cap, MS_SYNC);
     munmap(this->mapped_array, this->cap);
     this->cap = cap;
     ftruncate(this->file, this->cap);
     this->mapped_array = (T*)mmap(NULL, this->cap, PROT_READ | PROT_WRITE, MAP_SHARED, this->file, 0);
-    if(mapped_array) {
-        return true;
-    }
-    else {
-        return false;
+    if(!this->mapped_array) {
+        throw std::runtime_error("MemoryMappedFileArray::Realloc(size_t cap) Error: mapped_array is NULL");
     }
 }
 #endif
@@ -83,6 +84,9 @@ MemoryMappedFileArray<T>::MemoryMappedFileArray(const char* filename, size_t blo
     FileResize(this->cap);
     this->file.mapping_handle = CreateFileMapping(this->file.file_handle, nullptr, PAGE_READWRITE, 0, (DWORD)this->cap, nullptr);
     this->mapped_array = (T*)MapViewOfFile(this->file.mapping_handle, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, (DWORD)this->cap);
+    if(!this->mapped_array) {
+	throw std::runtime_error("MemoryMappedFileArray::MemoryMappedFileArray(const char* filename, size_t block_size) Error: mapped_array is NULL");	
+    }
 }
 
 template <typename T>
@@ -93,7 +97,7 @@ MemoryMappedFileArray<T>::~MemoryMappedFileArray() {
 }
 
 template <typename T>
-bool MemoryMappedFileArray<T>::Realloc(size_t cap) {
+void MemoryMappedFileArray<T>::Realloc(size_t cap) {
     this->cap = cap;
     UnMapViewOfFile(this->mapped_array);
     CloseHandle(this->file.mapping_handle);
@@ -101,35 +105,27 @@ bool MemoryMappedFileArray<T>::Realloc(size_t cap) {
     SetEndOfFile(this->file.file_handle);
     this->file.mapping_handle = CreateFileMapping(this->file.file_handle, nullptr, PAGE_READWRITE, 0, (DWORD)this->cap, nullptr);
     this->mapped_array = (T*)MapViewOfFile(this->file.mapping_handle, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, (DWORD)this->cap);
+    if(!this->mapped_array) {
+	throw std::runtime_error("MemoryMappedFileArray::Realloc(size_t cap) Error: mapped_array is NULL");
+    }
 }
 #endif
 
 template <typename T>
-bool MemoryMappedFileArray<T>::Add(T element) {
+void MemoryMappedFileArray<T>::Add(T element) {
     if((size + 1) * sizeof(T) >= cap) {
-	if(this->Realloc(this->cap + this->block_size)) {
-	    this->mapped_array[size] = element;
-	    this->size++;
-	    return true;
-	}
-	else {
-	    return false;
-	}
+	this->Realloc(this->cap + this->block_size); 
     }
     this->mapped_array[size] = element;
     this->size++;
-    return true;
 }
 
 template <typename T>
-bool MemoryMappedFileArray<T>::Resize(size_t size) {
+void MemoryMappedFileArray<T>::Resize(size_t size) {
     if(size > this->cap) {
-	if(!this->Realloc(((size * sizeof(T)) + 1) * this->block_size)) {
-	    return false;
-	}
+	this->Realloc(((size * sizeof(T)) + 1) * this->block_size);
     }
     this->size = size;
-    return true;
 }
 
 template <typename T>
